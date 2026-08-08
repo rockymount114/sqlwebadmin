@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL Web Admin - Rust High-Performance Database Studio</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- CodeMirror 6 for SQL Editor -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/sql/sql.min.js"></script>
+    
+    <!-- Custom Stylesheet -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Top Navigation Header -->
+        <header class="app-header">
+            <div class="header-left">
+                <div class="logo">
+                    <div class="logo-icon"><i class="fa-solid fa-database"></i></div>
+                    <div class="logo-text">
+                        <span class="logo-title">SQL Web Admin</span>
+                        <span class="logo-badge"><i class="fa-solid fa-bolt"></i> Rust Engine</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="header-center">
+                <div class="engine-selector">
+                    <span class="selector-label"><i class="fa-solid fa-server"></i> Engine:</span>
+                    <select id="dbDriverSelect" class="styled-select">
+                        <option value="mssql" selected>Microsoft SQL Server (MSSQL)</option>
+                        <option value="postgres">PostgreSQL</option>
+                        <option value="mysql">MySQL / MariaDB</option>
+                        <option value="sqlite">SQLite 3</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="header-right">
+                <button id="connectionBtn" class="btn btn-outline btn-sm">
+                    <i class="fa-solid fa-network-wired"></i> Connection Settings
+                </button>
+                <div class="connection-status" id="connStatus">
+                    <span class="status-dot connected"></span>
+                    <span class="status-text">Connected</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Workspace Grid -->
+        <main class="app-workspace">
+            <!-- Sidebar: Schema Browser Tree -->
+            <aside class="sidebar" id="sidebar">
+                <div class="sidebar-header">
+                    <div class="sidebar-title">
+                        <i class="fa-solid fa-sitemap"></i> Schema Explorer
+                    </div>
+                    <button id="refreshTreeBtn" class="btn-icon" title="Refresh Schema Tree">
+                        <i class="fa-solid fa-rotate-right"></i>
+                    </button>
+                </div>
+
+                <div class="sidebar-search">
+                    <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                    <input type="text" id="schemaSearchInput" placeholder="Filter tables, views, sprocs..." />
+                </div>
+
+                <div class="tree-container" id="treeView">
+                    <div class="loading-spinner" id="treeLoading">
+                        <i class="fa-solid fa-circle-notch fa-spin"></i> Loading schema...
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Main Content Area -->
+            <section class="main-content">
+                <!-- Query Editor Area -->
+                <div class="editor-pane">
+                    <div class="pane-toolbar">
+                        <div class="toolbar-group">
+                            <button id="executeBtn" class="btn btn-primary">
+                                <i class="fa-solid fa-play"></i> Run Query <span class="kbd-hint">Ctrl+Enter</span>
+                            </button>
+                            <button id="exportCsvBtn" class="btn btn-secondary">
+                                <i class="fa-solid fa-file-csv"></i> Export CSV
+                            </button>
+                            <button id="resetBtn" class="btn btn-ghost" title="Clear Editor & Results">
+                                <i class="fa-solid fa-trash-can"></i> Clear
+                            </button>
+                        </div>
+                        <div class="toolbar-group">
+                            <button id="formatSqlBtn" class="btn btn-ghost" title="Format SQL Query">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> Format
+                            </button>
+                            <button id="copyQueryBtn" class="btn btn-ghost" title="Copy Query">
+                                <i class="fa-regular fa-copy"></i> Copy
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="code-editor-wrapper">
+                        <textarea id="queryTextarea" placeholder="Write your SQL query here..."></textarea>
+                    </div>
+                </div>
+
+                <!-- Execution Status & Notification Bar -->
+                <div class="status-bar" id="statusBar" style="display: none;">
+                    <div class="status-info" id="statusInfo">
+                        <span id="returnLabel" class="badge badge-success"></span>
+                        <span id="timeLabel" class="badge badge-info"></span>
+                    </div>
+                    <div id="errorLabel" class="alert alert-error" style="display: none;"></div>
+                </div>
+
+                <!-- Results & History Workspace -->
+                <div class="results-pane">
+                    <div class="results-tabs">
+                        <div class="tab-list" id="resultTabList">
+                            <button class="tab-btn active" data-target="queryResults">
+                                <i class="fa-solid fa-table-list"></i> Query Results
+                            </button>
+                            <button class="tab-btn" data-target="historyResults">
+                                <i class="fa-solid fa-clock-rotate-left"></i> History & Logs
+                            </button>
+                        </div>
+                        <div class="table-search" id="tableSearchBox" style="display: none;">
+                            <i class="fa-solid fa-filter"></i>
+                            <input type="text" id="tableFilterInput" placeholder="Filter rows in result table..." />
+                        </div>
+                    </div>
+
+                    <div class="tab-content active" id="queryResults">
+                        <div class="empty-state" id="emptyResultsState">
+                            <i class="fa-solid fa-terminal empty-icon"></i>
+                            <h3>No results to display</h3>
+                            <p>Execute a SQL statement above or double-click a table in the Schema Explorer to start inspecting data.</p>
+                        </div>
+                        <div id="resultsContainer"></div>
+                    </div>
+
+                    <div class="tab-content" id="historyResults">
+                        <div class="history-list" id="historyList">
+                            <div class="empty-state">
+                                <i class="fa-solid fa-history empty-icon"></i>
+                                <p>No executed query history yet.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Connection Modal -->
+    <div class="modal-overlay" id="connectionModal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-plug"></i> Database Connection Settings</h3>
+                <button class="modal-close" id="closeModalBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="modalDriverSelect">Target Database Engine</label>
+                    <select id="modalDriverSelect" class="styled-select form-control">
+                        <option value="mssql">Microsoft SQL Server (MSSQL)</option>
+                        <option value="postgres">PostgreSQL</option>
+                        <option value="mysql">MySQL / MariaDB</option>
+                        <option value="sqlite">SQLite 3</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="connectionStringInput">Connection String / DSN</label>
+                    <textarea id="connectionStringInput" class="form-control" rows="4" placeholder="Server=127.0.0.1;User ID=sa;Password=...;TrustServerCertificate=True;"></textarea>
+                    <span class="form-hint">
+                        <strong>MSSQL Example:</strong> <code>Server=127.0.0.1;User ID=sa;Password=YourPass!;TrustServerCertificate=True;</code><br>
+                        <strong>PostgreSQL:</strong> <code>postgres://user:pass@localhost:5432/dbname</code><br>
+                        <strong>MySQL:</strong> <code>mysql://user:pass@localhost:3306/dbname</code><br>
+                        <strong>SQLite:</strong> <code>sqlite:///path/to/database.db</code> or <code>sqlite::memory:</code>
+                    </span>
+                </div>
+
+                <div id="modalTestResult" class="modal-alert" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="testConnectionBtn" class="btn btn-secondary">
+                    <i class="fa-solid fa-vial"></i> Test Connection
+                </button>
+                <button id="saveConnectionBtn" class="btn btn-primary">
+                    <i class="fa-solid fa-check"></i> Apply Connection
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Script -->
+    <script src="app.js"></script>
+</body>
+</html>
