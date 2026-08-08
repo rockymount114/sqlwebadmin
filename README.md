@@ -14,19 +14,39 @@ Replaces legacy ASP.NET `SqlAdministrator.aspx` applications while offering nati
   - **Query Auto-Generation**: Selecting a table automatically generates `SELECT TOP 1000 [col1], [col2]... FROM table`.
   - **Definition Retrieval**: View definitions for Views and Stored Procedures directly from `sys.sql_modules`.
   - **CSV Export**: Stream query output as downloadable CSV files (`query_export.csv`).
-  - **Web.config Parser**: Auto-detects and loads connection strings from existing ASP.NET `Web.config` files.
 
 - **Modern Enhancements**:
   - **Multi-Database Support**: Dynamically switch between **MSSQL**, **PostgreSQL**, **MySQL**, and **SQLite**.
   - **Panic-Free Data Handling**: Safe type conversion (`row.try_get`) for binary, GUID, date/time, and custom database types.
-  - **Pure Rust Security**: Zero OpenSSL or native C-library dependencies (`rustls`).
+  - **Pure Rust Security**: Zero OpenSSL or native C-library dependencies (`rustls`). No hardcoded credentials in source code.
   - **State-of-the-Art Web UI**: Dark mode theme, CodeMirror SQL editor (syntax highlighting, `Ctrl+Enter` shortcut execution, SQL formatting, copy query, query history).
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Build & Run
+### 1. Configuration
+
+Copy `config.toml.example` to `config.toml` and set your credentials:
+
+```bash
+cp config.toml.example config.toml
+```
+
+Edit `config.toml`:
+```toml
+default_driver = "mssql"
+default_connection_string = "Server=127.0.0.1;User ID=sa;Password=your_password_here;TrustServerCertificate=True;"
+port = 8080
+```
+
+Priority order for database connection strings:
+1. `config.toml`
+2. `Web.config` (reads `<add name="ConnectionString" connectionString="..." />`)
+3. Environment variables: `CONNECTION_STRING` or `DATABASE_URL`, `DATABASE_DRIVER`, and `PORT`.
+4. Web UI Connection Modal (live connection string switching).
+
+### 2. Build & Run
 
 ```bash
 # Build the application
@@ -38,13 +58,6 @@ cargo run --release
 
 Open your browser at:
 `http://localhost:8080`
-
-### 2. Configuration
-
-Priority order for database connection strings:
-1. `Web.config` (reads `<add name="ConnectionString" connectionString="..." />`)
-2. Environment variables: `CONNECTION_STRING` or `DATABASE_URL`, `DATABASE_DRIVER` (`mssql`, `postgres`, `mysql`, `sqlite`), and `PORT`.
-3. Web UI Connection Modal (live connection string switching).
 
 ---
 

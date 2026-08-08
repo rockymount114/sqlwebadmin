@@ -12,19 +12,20 @@ This project replaces the legacy ASP.NET `SqlAdministrator.aspx` single-file app
   - `tiberius`: Pure-Rust TDS driver for Microsoft SQL Server
   - `sqlx`: Dynamic async drivers for PostgreSQL, MySQL, and SQLite
 - **Security / TLS**: `rustls` (Zero native C-library or OpenSSL build dependencies)
-- **Serialization**: `serde` & `serde_json`
+- **Serialization**: `serde`, `serde_json`, `toml`
 - **Frontend**: HTML5, Vanilla CSS3 (Dark Mode Glassmorphic Design System), CodeMirror 5 SQL Editor, FontAwesome 6
 
 ## Directory Structure
 ```
 sqlwebadmin/
 ├── Cargo.toml          # Cargo dependencies and binary metadata
-├── Web.config          # Legacy ASP.NET config file (parsed for default connection string)
+├── config.toml.example # Example configuration file template
+├── config.toml         # User configuration file (git-ignored)
 ├── README.md           # User documentation and quick start guide
 ├── GEMINI.md           # Project architecture and developer instructions
 ├── src/
 │   ├── main.rs         # Application entry point, Axum routes, CORS & static file server
-│   ├── config.rs       # Configuration loader (Web.config & environment variables)
+│   ├── config.rs       # Configuration loader (config.toml, Web.config & env vars)
 │   ├── models.rs       # Data models and API DTOs
 │   ├── db/
 │   │   ├── mod.rs      # Dynamic multi-database dispatcher
@@ -57,11 +58,13 @@ cargo run
 cargo build --release
 ```
 
-### Environment Variables
-- `CONNECTION_STRING` or `DATABASE_URL`: Default connection string (overrides `Web.config`)
-- `DATABASE_DRIVER`: Default database driver (`mssql`, `postgres`, `mysql`, `sqlite`)
-- `PORT`: HTTP listener port (default: `8080`)
+### Configuration & Environment Variables
+- `config.toml`: Preferred local configuration file (copied from `config.toml.example`).
+- `CONNECTION_STRING` or `DATABASE_URL`: Default connection string (overrides config files).
+- `DATABASE_DRIVER`: Default database driver (`mssql`, `postgres`, `mysql`, `sqlite`).
+- `PORT`: HTTP listener port (default: `8080`).
 
 ## Guidelines for Developers
+- **SECURITY**: Never hardcode any default database passwords or credentials in source code (e.g. `src/config.rs`). Default connection strings in code must be empty strings.
 - Keep column value extraction safe: always use `row.try_get::<T, _>(idx)` rather than `row.get` to prevent panics when handling unusual or binary database column types.
 - Ensure all API endpoints return valid JSON responses with appropriate HTTP status codes so the frontend `safeFetchJson` helper never encounters invalid JSON tokens.

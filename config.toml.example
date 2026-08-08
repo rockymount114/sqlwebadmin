@@ -1,0 +1,6 @@
+# SQL Web Admin Configuration
+# Copy this file to `config.toml` and set your credentials.
+
+default_driver = "mssql"
+default_connection_string = "Server=127.0.0.1;User ID=sa;Password=your_password_here;TrustServerCertificate=True;"
+port = 8080

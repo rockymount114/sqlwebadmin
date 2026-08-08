@@ -12,7 +12,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            default_connection_string: "Server=127.0.0.1;User ID=sa;Password=Xl9api20@Strong!;TrustServerCertificate=True;".to_string(),
+            default_connection_string: String::new(),
             default_driver: "mssql".to_string(),
             port: 8080,
         }
@@ -22,14 +22,25 @@ impl Default for AppConfig {
 pub fn load_config() -> AppConfig {
     let mut config = AppConfig::default();
 
-    // 1. Try reading from Web.config (backward compatibility with original ASP.NET project)
+    // 1. Try reading from config.toml
+    if Path::new("config.toml").exists() {
+        if let Ok(content) = fs::read_to_string("config.toml") {
+            if let Ok(toml_config) = toml::from_str::<AppConfig>(&content) {
+                config = toml_config;
+            }
+        }
+    }
+
+    // 2. Try reading from Web.config (if connectionString is set)
     if Path::new("Web.config").exists() {
         if let Ok(content) = fs::read_to_string("Web.config") {
             if let Ok(doc) = roxmltree::Document::parse(&content) {
                 for node in doc.descendants() {
                     if node.has_tag_name("add") {
                         if let Some(conn_str) = node.attribute("connectionString") {
-                            config.default_connection_string = conn_str.to_string();
+                            if !conn_str.trim().is_empty() {
+                                config.default_connection_string = conn_str.to_string();
+                            }
                         }
                     }
                 }
@@ -37,7 +48,7 @@ pub fn load_config() -> AppConfig {
         }
     }
 
-    // 2. Override with environment variables if present
+    // 3. Override with environment variables if present
     if let Ok(env_conn) = std::env::var("CONNECTION_STRING").or_else(|_| std::env::var("DATABASE_URL")) {
         config.default_connection_string = env_conn;
     }
