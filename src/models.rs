@@ -80,6 +80,7 @@ pub struct GetChildrenQuery {
     pub parent_id: String,
     pub driver: Option<String>,
     pub connection_string: Option<String>,
+    #[allow(dead_code)]
     pub database: Option<String>,
 }
 
@@ -89,5 +90,6 @@ pub struct GetDefinitionQuery {
     pub object_id: String,
     pub driver: Option<String>,
     pub connection_string: Option<String>,
+    #[allow(dead_code)]
     pub database: Option<String>,
 }

@@ -57,8 +57,18 @@ async fn main() {
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    tracing::info!("🚀 SQL Web Admin server listening on http://localhost:{}", port);
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::error!(
+                "❌ Failed to bind to port {}: {}. Is another instance of sqlwebadmin or another process already running on port {}?",
+                port, e, port
+            );
+            std::process::exit(1);
+        }
+    };
+
+    tracing::info!("🚀 SQL Web Admin server listening on http://localhost:{}", port);
     axum::serve(listener, app).await.unwrap();
 }
