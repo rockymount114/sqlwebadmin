@@ -120,7 +120,6 @@ pub async fn execute_query(connection_string: &str, query: &str) -> QueryExecute
 }
 
 fn extract_column_value(row: &Row, idx: usize) -> Value {
-    // Attempt standard type conversions safely via try_get
     if let Ok(Some(s)) = row.try_get::<&str, _>(idx) {
         return Value::from(s);
     }
@@ -159,40 +158,113 @@ fn extract_column_value(row: &Row, idx: usize) -> Value {
     Value::Null
 }
 
-pub async fn get_tree_root(_connection_string: &str) -> Result<Vec<SchemaNode>> {
-    Ok(vec![
-        SchemaNode {
-            id: "TABLE".to_string(),
-            text: "Tables".to_string(),
-            node_type: "TABLE".to_string(),
-            value: "TABLE".to_string(),
-            has_children: true,
-        },
-        SchemaNode {
-            id: "VIEW".to_string(),
-            text: "Views".to_string(),
-            node_type: "VIEW".to_string(),
-            value: "VIEW".to_string(),
-            has_children: true,
-        },
-        SchemaNode {
-            id: "SPROC".to_string(),
-            text: "Stored Procedures".to_string(),
-            node_type: "SPROC".to_string(),
-            value: "SPROC".to_string(),
-            has_children: true,
-        },
-    ])
+pub async fn get_tree_root(connection_string: &str) -> Result<Vec<SchemaNode>> {
+    let mut client = match connect(connection_string).await {
+        Ok(c) => c,
+        Err(_) => {
+            // Fallback default tree if offline
+            return Ok(vec![
+                SchemaNode {
+                    id: "TABLE".to_string(),
+                    text: "Tables".to_string(),
+                    node_type: "TABLE".to_string(),
+                    value: "TABLE".to_string(),
+                    has_children: true,
+                },
+            ]);
+        }
+    };
+
+    // List all accessible databases on MSSQL instance
+    let sql = "SELECT name FROM sys.databases WHERE state = 0 ORDER BY name";
+    let mut db_nodes = Vec::new();
+    if let Ok(stream) = client.simple_query(sql).await {
+        if let Ok(result_sets) = stream.into_results().await {
+            for rs in result_sets {
+                for row in rs {
+                    if let Ok(Some(db_name)) = row.try_get::<&str, _>(0) {
+                        db_nodes.push(SchemaNode {
+                            id: format!("DB.{}", db_name),
+                            text: db_name.to_string(),
+                            node_type: "DATABASE".to_string(),
+                            value: db_name.to_string(),
+                            has_children: true,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    if !db_nodes.is_empty() {
+        Ok(db_nodes)
+    } else {
+        // Fallback to current database objects
+        Ok(vec![
+            SchemaNode {
+                id: "TABLE.master".to_string(),
+                text: "Tables (master)".to_string(),
+                node_type: "TABLE_GROUP".to_string(),
+                value: "master".to_string(),
+                has_children: true,
+            },
+            SchemaNode {
+                id: "VIEW.master".to_string(),
+                text: "Views (master)".to_string(),
+                node_type: "VIEW_GROUP".to_string(),
+                value: "master".to_string(),
+                has_children: true,
+            },
+            SchemaNode {
+                id: "SPROC.master".to_string(),
+                text: "Stored Procedures (master)".to_string(),
+                node_type: "SPROC_GROUP".to_string(),
+                value: "master".to_string(),
+                has_children: true,
+            },
+        ])
+    }
 }
 
 pub async fn get_children(connection_string: &str, node_type: &str, parent_id: &str) -> Result<Vec<SchemaNode>> {
     let mut client = connect(connection_string).await?;
     let mut nodes = Vec::new();
 
+    if node_type == "DATABASE" {
+        let db_name = parent_id.trim_start_matches("DB.");
+        return Ok(vec![
+            SchemaNode {
+                id: format!("TABLE_GROUP.{}", db_name),
+                text: "Tables".to_string(),
+                node_type: "TABLE_GROUP".to_string(),
+                value: db_name.to_string(),
+                has_children: true,
+            },
+            SchemaNode {
+                id: format!("VIEW_GROUP.{}", db_name),
+                text: "Views".to_string(),
+                node_type: "VIEW_GROUP".to_string(),
+                value: db_name.to_string(),
+                has_children: true,
+            },
+            SchemaNode {
+                id: format!("SPROC_GROUP.{}", db_name),
+                text: "Stored Procedures".to_string(),
+                node_type: "SPROC_GROUP".to_string(),
+                value: db_name.to_string(),
+                has_children: true,
+            },
+        ]);
+    }
+
     match node_type {
-        "TABLE" => {
-            let sql = "SELECT 'TABLE.' + SCHEMA_NAME(schema_id) + '.' + name AS Id, SCHEMA_NAME(schema_id) + '.' + name AS Name FROM sys.tables ORDER BY SCHEMA_NAME(schema_id), name";
-            let stream = client.simple_query(sql).await?;
+        "TABLE_GROUP" | "TABLE" => {
+            let db_name = parent_id.trim_start_matches("TABLE_GROUP.").trim_start_matches("TABLE.");
+            let sql = format!(
+                "SELECT 'TABLE_ITEM.' + '{}' + '.' + SCHEMA_NAME(schema_id) + '.' + name AS Id, SCHEMA_NAME(schema_id) + '.' + name AS Name FROM [{}].sys.tables ORDER BY SCHEMA_NAME(schema_id), name",
+                db_name, db_name
+            );
+            let stream = client.simple_query(&sql).await?;
             let result_sets = stream.into_results().await?;
             for rs in result_sets {
                 for row in rs {
@@ -210,9 +282,13 @@ pub async fn get_children(connection_string: &str, node_type: &str, parent_id: &
                 }
             }
         }
-        "VIEW" => {
-            let sql = "SELECT 'VIEW.' + SCHEMA_NAME(schema_id) + '.' + name AS Id, SCHEMA_NAME(schema_id) + '.' + name AS Name FROM sys.views ORDER BY SCHEMA_NAME(schema_id), name";
-            let stream = client.simple_query(sql).await?;
+        "VIEW_GROUP" | "VIEW" => {
+            let db_name = parent_id.trim_start_matches("VIEW_GROUP.").trim_start_matches("VIEW.");
+            let sql = format!(
+                "SELECT 'VIEW_ITEM.' + '{}' + '.' + SCHEMA_NAME(schema_id) + '.' + name AS Id, SCHEMA_NAME(schema_id) + '.' + name AS Name FROM [{}].sys.views ORDER BY SCHEMA_NAME(schema_id), name",
+                db_name, db_name
+            );
+            let stream = client.simple_query(&sql).await?;
             let result_sets = stream.into_results().await?;
             for rs in result_sets {
                 for row in rs {
@@ -230,9 +306,13 @@ pub async fn get_children(connection_string: &str, node_type: &str, parent_id: &
                 }
             }
         }
-        "SPROC" => {
-            let sql = "SELECT 'SPROC.' + SCHEMA_NAME(schema_id) + '.' + name AS Id, SCHEMA_NAME(schema_id) + '.' + name AS Name FROM sys.procedures ORDER BY SCHEMA_NAME(schema_id), name";
-            let stream = client.simple_query(sql).await?;
+        "SPROC_GROUP" | "SPROC" => {
+            let db_name = parent_id.trim_start_matches("SPROC_GROUP.").trim_start_matches("SPROC.");
+            let sql = format!(
+                "SELECT 'SPROC_ITEM.' + '{}' + '.' + SCHEMA_NAME(schema_id) + '.' + name AS Id, SCHEMA_NAME(schema_id) + '.' + name AS Name FROM [{}].sys.procedures ORDER BY SCHEMA_NAME(schema_id), name",
+                db_name, db_name
+            );
+            let stream = client.simple_query(&sql).await?;
             let result_sets = stream.into_results().await?;
             for rs in result_sets {
                 for row in rs {
@@ -251,10 +331,17 @@ pub async fn get_children(connection_string: &str, node_type: &str, parent_id: &
             }
         }
         "TABLE_ITEM" | "VIEW_ITEM" => {
-            let clean_id = parent_id.trim_start_matches("TABLE.").trim_start_matches("VIEW.");
+            let clean_id = parent_id.trim_start_matches("TABLE_ITEM.").trim_start_matches("VIEW_ITEM.");
+            let parts: Vec<&str> = clean_id.splitn(2, '.').collect();
+            let (db_name, full_table_name) = if parts.len() == 2 {
+                (parts[0], parts[1])
+            } else {
+                ("master", clean_id)
+            };
+
             let sql = format!(
-                "SELECT 'COLUMN.' + '{}' + '.' + c.name AS Id, c.name + ' (' + t.name + CASE WHEN t.name IN ('time', 'datetime2', 'datetimeoffset', 'varbinary', 'varchar', 'binary', 'char', 'nvarchar', 'nchar') THEN '(' + CASE WHEN c.max_length = -1 THEN 'max' ELSE CAST(c.max_length AS nvarchar(50)) END + ')' ELSE '' END + ')' AS Name FROM sys.columns AS c JOIN sys.types AS t ON c.system_type_id = t.system_type_id AND c.user_type_id = t.user_type_id WHERE object_id = OBJECT_ID('{}') ORDER BY column_id",
-                clean_id, clean_id
+                "SELECT 'COLUMN.' + '{}' + '.' + c.name AS Id, c.name + ' (' + t.name + CASE WHEN t.name IN ('time', 'datetime2', 'datetimeoffset', 'varbinary', 'varchar', 'binary', 'char', 'nvarchar', 'nchar') THEN '(' + CASE WHEN c.max_length = -1 THEN 'max' ELSE CAST(c.max_length AS nvarchar(50)) END + ')' ELSE '' END + ')' AS Name FROM [{}].sys.columns AS c JOIN [{}].sys.types AS t ON c.system_type_id = t.system_type_id AND c.user_type_id = t.user_type_id WHERE object_id = OBJECT_ID('[{}].{}') ORDER BY column_id",
+                clean_id, db_name, db_name, db_name, full_table_name
             );
             let stream = client.simple_query(&sql).await?;
             let result_sets = stream.into_results().await?;
@@ -275,10 +362,17 @@ pub async fn get_children(connection_string: &str, node_type: &str, parent_id: &
             }
         }
         "SPROC_ITEM" => {
-            let clean_id = parent_id.trim_start_matches("SPROC.");
+            let clean_id = parent_id.trim_start_matches("SPROC_ITEM.");
+            let parts: Vec<&str> = clean_id.splitn(2, '.').collect();
+            let (db_name, full_sproc_name) = if parts.len() == 2 {
+                (parts[0], parts[1])
+            } else {
+                ("master", clean_id)
+            };
+
             let sql = format!(
-                "SELECT 'PARAMETER.' + '{}' + '.' + p.name AS Id, p.name + ' (' + t.name + CASE WHEN t.name IN ('time', 'datetime2', 'datetimeoffset', 'varbinary', 'varchar', 'binary', 'char', 'nvarchar', 'nchar') THEN '(' + CASE WHEN p.max_length = -1 THEN 'max' ELSE CAST(p.max_length AS nvarchar(50)) END + ')' ELSE '' END + ')' AS Name FROM sys.parameters AS p JOIN sys.types AS t ON p.system_type_id = t.system_type_id AND p.user_type_id = t.user_type_id WHERE p.object_id = OBJECT_ID('{}') ORDER BY p.parameter_id",
-                clean_id, clean_id
+                "SELECT 'PARAMETER.' + '{}' + '.' + p.name AS Id, p.name + ' (' + t.name + CASE WHEN t.name IN ('time', 'datetime2', 'datetimeoffset', 'varbinary', 'varchar', 'binary', 'char', 'nvarchar', 'nchar') THEN '(' + CASE WHEN p.max_length = -1 THEN 'max' ELSE CAST(p.max_length AS nvarchar(50)) END + ')' ELSE '' END + ')' AS Name FROM [{}].sys.parameters AS p JOIN [{}].sys.types AS t ON p.system_type_id = t.system_type_id AND p.user_type_id = t.user_type_id WHERE p.object_id = OBJECT_ID('[{}].{}') ORDER BY p.parameter_id",
+                clean_id, db_name, db_name, db_name, full_sproc_name
             );
             let stream = client.simple_query(&sql).await?;
             let result_sets = stream.into_results().await?;
@@ -307,14 +401,24 @@ pub async fn get_children(connection_string: &str, node_type: &str, parent_id: &
 pub async fn get_definition(connection_string: &str, node_type: &str, object_id: &str) -> Result<String> {
     let mut client = connect(connection_string).await?;
     let clean_id = object_id
+        .trim_start_matches("TABLE_ITEM.")
+        .trim_start_matches("VIEW_ITEM.")
+        .trim_start_matches("SPROC_ITEM.")
         .trim_start_matches("TABLE.")
         .trim_start_matches("VIEW.")
         .trim_start_matches("SPROC.");
 
+    let parts: Vec<&str> = clean_id.splitn(2, '.').collect();
+    let (db_name, object_name) = if parts.len() == 2 {
+        (parts[0], parts[1])
+    } else {
+        ("master", clean_id)
+    };
+
     if node_type == "TABLE_ITEM" || node_type == "TABLE" {
         let col_sql = format!(
-            "SELECT QUOTENAME(c.Name) AS Id, QUOTENAME(c.Name) AS Name FROM sys.columns AS c JOIN sys.types AS t ON c.system_type_id = t.system_type_id AND c.user_type_id = t.user_type_id WHERE c.object_id = OBJECT_ID('{}') ORDER BY column_id",
-            clean_id
+            "SELECT QUOTENAME(c.Name) AS Id, QUOTENAME(c.Name) AS Name FROM [{}].sys.columns AS c JOIN [{}].sys.types AS t ON c.system_type_id = t.system_type_id AND c.user_type_id = t.user_type_id WHERE c.object_id = OBJECT_ID('[{}].{}') ORDER BY column_id",
+            db_name, db_name, db_name, object_name
         );
         let stream = client.simple_query(&col_sql).await?;
         let result_sets = stream.into_results().await?;
@@ -327,11 +431,11 @@ pub async fn get_definition(connection_string: &str, node_type: &str, object_id:
             }
         }
         let cols_joined = if cols.is_empty() { "*".to_string() } else { cols.join("\n   ,") };
-        return Ok(format!("SELECT TOP 1000\n    {}\nFROM\n    {}", cols_joined, clean_id));
+        return Ok(format!("SELECT TOP 1000\n    {}\nFROM\n    [{}].{}", cols_joined, db_name, object_name));
     } else {
         let def_sql = format!(
-            "SELECT m.definition FROM sys.objects AS o JOIN sys.sql_modules AS m ON o.object_id = m.object_id WHERE o.object_id = OBJECT_ID('{}')",
-            clean_id
+            "SELECT m.definition FROM [{}].sys.objects AS o JOIN [{}].sys.sql_modules AS m ON o.object_id = m.object_id WHERE o.object_id = OBJECT_ID('[{}].{}')",
+            db_name, db_name, db_name, object_name
         );
         let stream = client.simple_query(&def_sql).await?;
         let result_sets = stream.into_results().await?;

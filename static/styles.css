@@ -299,6 +299,7 @@ body {
     font-size: 13px;
 }
 
+.tree-node-icon.db { color: #f59e0b; }
 .tree-node-icon.table { color: #38bdf8; }
 .tree-node-icon.view { color: #a78bfa; }
 .tree-node-icon.sproc { color: #f472b6; }

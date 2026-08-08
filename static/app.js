@@ -252,9 +252,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         contentEl.className = 'tree-content';
 
         let iconClass = 'fa-folder';
-        if (nodeData.node_type === 'TABLE' || nodeData.node_type === 'TABLE_ITEM') iconClass = 'fa-table table';
-        else if (nodeData.node_type === 'VIEW' || nodeData.node_type === 'VIEW_ITEM') iconClass = 'fa-eye view';
-        else if (nodeData.node_type === 'SPROC' || nodeData.node_type === 'SPROC_ITEM') iconClass = 'fa-gears sproc';
+        if (nodeData.node_type === 'DATABASE') iconClass = 'fa-database db';
+        else if (nodeData.node_type === 'TABLE' || nodeData.node_type === 'TABLE_ITEM' || nodeData.node_type === 'TABLE_GROUP') iconClass = 'fa-table table';
+        else if (nodeData.node_type === 'VIEW' || nodeData.node_type === 'VIEW_ITEM' || nodeData.node_type === 'VIEW_GROUP') iconClass = 'fa-eye view';
+        else if (nodeData.node_type === 'SPROC' || nodeData.node_type === 'SPROC_ITEM' || nodeData.node_type === 'SPROC_GROUP') iconClass = 'fa-gears sproc';
         else if (nodeData.node_type === 'COLUMN') iconClass = 'fa-columns column';
         else if (nodeData.node_type === 'PARAMETER') iconClass = 'fa-code-parameter param';
 
