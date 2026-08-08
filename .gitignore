@@ -2,3 +2,7 @@
 **/*.rs.bk
 .env
 *.log
+
+SqlAdministrator.aspx
+Web.config
+
