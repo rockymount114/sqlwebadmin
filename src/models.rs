@@ -31,6 +31,7 @@ pub struct QueryRequest {
     pub query: String,
     pub driver: Option<String>,
     pub connection_string: Option<String>,
+    pub database: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -54,15 +55,23 @@ pub struct QueryExecuteResponse {
 pub struct SchemaNode {
     pub id: String,
     pub text: String,
-    pub node_type: String, // "TABLE", "VIEW", "SPROC", "COLUMN", "PARAMETER"
+    pub node_type: String, // "DATABASE", "TABLE_GROUP", "VIEW_GROUP", "SPROC_GROUP", "TABLE_ITEM", "VIEW_ITEM", "SPROC_ITEM", "COLUMN", "PARAMETER"
     pub value: String,
     pub has_children: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GetDatabasesQuery {
+    pub driver: Option<String>,
+    pub connection_string: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct GetTreeQuery {
     pub driver: Option<String>,
     pub connection_string: Option<String>,
+    pub database: Option<String>,
+    pub all_databases: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,6 +80,7 @@ pub struct GetChildrenQuery {
     pub parent_id: String,
     pub driver: Option<String>,
     pub connection_string: Option<String>,
+    pub database: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,4 +89,5 @@ pub struct GetDefinitionQuery {
     pub object_id: String,
     pub driver: Option<String>,
     pub connection_string: Option<String>,
+    pub database: Option<String>,
 }

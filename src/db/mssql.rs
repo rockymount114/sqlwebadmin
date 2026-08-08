@@ -25,7 +25,23 @@ pub async fn connect(connection_string: &str) -> Result<TiberiusClient> {
     Ok(client)
 }
 
-pub async fn execute_query(connection_string: &str, query: &str) -> QueryExecuteResponse {
+pub async fn get_databases(connection_string: &str) -> Result<Vec<String>> {
+    let mut client = connect(connection_string).await?;
+    let sql = "SELECT name FROM sys.databases WHERE state = 0 ORDER BY name";
+    let stream = client.simple_query(sql).await?;
+    let result_sets = stream.into_results().await?;
+    let mut dbs = Vec::new();
+    for rs in result_sets {
+        for row in rs {
+            if let Ok(Some(name)) = row.try_get::<&str, _>(0) {
+                dbs.push(name.to_string());
+            }
+        }
+    }
+    Ok(dbs)
+}
+
+pub async fn execute_query(connection_string: &str, database: Option<&str>, query: &str) -> QueryExecuteResponse {
     let start = Instant::now();
     
     let mut client = match connect(connection_string).await {
@@ -42,7 +58,17 @@ pub async fn execute_query(connection_string: &str, query: &str) -> QueryExecute
         }
     };
 
-    let stream = match client.simple_query(query).await {
+    let full_query = if let Some(db) = database {
+        if !db.trim().is_empty() && !query.trim().to_uppercase().starts_with("USE ") {
+            format!("USE [{}];\n{}", db, query)
+        } else {
+            query.to_string()
+        }
+    } else {
+        query.to_string()
+    };
+
+    let stream = match client.simple_query(&full_query).await {
         Ok(s) => s,
         Err(e) => {
             return QueryExecuteResponse {
@@ -158,68 +184,42 @@ fn extract_column_value(row: &Row, idx: usize) -> Value {
     Value::Null
 }
 
-pub async fn get_tree_root(connection_string: &str) -> Result<Vec<SchemaNode>> {
-    let mut client = match connect(connection_string).await {
-        Ok(c) => c,
-        Err(_) => {
-            // Fallback default tree if offline
-            return Ok(vec![
-                SchemaNode {
-                    id: "TABLE".to_string(),
-                    text: "Tables".to_string(),
-                    node_type: "TABLE".to_string(),
-                    value: "TABLE".to_string(),
-                    has_children: true,
-                },
-            ]);
-        }
-    };
-
-    // List all accessible databases on MSSQL instance
-    let sql = "SELECT name FROM sys.databases WHERE state = 0 ORDER BY name";
-    let mut db_nodes = Vec::new();
-    if let Ok(stream) = client.simple_query(sql).await {
-        if let Ok(result_sets) = stream.into_results().await {
-            for rs in result_sets {
-                for row in rs {
-                    if let Ok(Some(db_name)) = row.try_get::<&str, _>(0) {
-                        db_nodes.push(SchemaNode {
-                            id: format!("DB.{}", db_name),
-                            text: db_name.to_string(),
-                            node_type: "DATABASE".to_string(),
-                            value: db_name.to_string(),
-                            has_children: true,
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    if !db_nodes.is_empty() {
-        Ok(db_nodes)
+pub async fn get_tree_root(connection_string: &str, database: Option<&str>, all_databases: bool) -> Result<Vec<SchemaNode>> {
+    if all_databases {
+        let dbs = get_databases(connection_string).await.unwrap_or_else(|_| vec!["master".to_string()]);
+        let nodes = dbs
+            .into_iter()
+            .map(|db_name| SchemaNode {
+                id: format!("DB.{}", db_name),
+                text: db_name.clone(),
+                node_type: "DATABASE".to_string(),
+                value: db_name,
+                has_children: true,
+            })
+            .collect();
+        Ok(nodes)
     } else {
-        // Fallback to current database objects
+        let db_name = database.unwrap_or("master");
         Ok(vec![
             SchemaNode {
-                id: "TABLE.master".to_string(),
-                text: "Tables (master)".to_string(),
+                id: format!("TABLE_GROUP.{}", db_name),
+                text: "Tables".to_string(),
                 node_type: "TABLE_GROUP".to_string(),
-                value: "master".to_string(),
+                value: db_name.to_string(),
                 has_children: true,
             },
             SchemaNode {
-                id: "VIEW.master".to_string(),
-                text: "Views (master)".to_string(),
+                id: format!("VIEW_GROUP.{}", db_name),
+                text: "Views".to_string(),
                 node_type: "VIEW_GROUP".to_string(),
-                value: "master".to_string(),
+                value: db_name.to_string(),
                 has_children: true,
             },
             SchemaNode {
-                id: "SPROC.master".to_string(),
-                text: "Stored Procedures (master)".to_string(),
+                id: format!("SPROC_GROUP.{}", db_name),
+                text: "Stored Procedures".to_string(),
                 node_type: "SPROC_GROUP".to_string(),
-                value: "master".to_string(),
+                value: db_name.to_string(),
                 has_children: true,
             },
         ])

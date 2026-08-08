@@ -12,7 +12,8 @@ use crate::{
     config::AppConfig,
     db,
     models::{
-        ConnectTestRequest, DbDriver, GetChildrenQuery, GetDefinitionQuery, GetTreeQuery, QueryRequest,
+        ConnectTestRequest, DbDriver, GetChildrenQuery, GetDatabasesQuery, GetDefinitionQuery,
+        GetTreeQuery, QueryRequest,
     },
 };
 
@@ -38,7 +39,7 @@ pub async fn test_connection_handler(
         DbDriver::Mysql => "SELECT 1",
     };
 
-    let result = db::execute_query(&driver, &payload.connection_string, test_query).await;
+    let result = db::execute_query(&driver, &payload.connection_string, None, test_query).await;
     if result.success {
         Json(json!({
             "success": true,
@@ -52,6 +53,20 @@ pub async fn test_connection_handler(
     }
 }
 
+pub async fn get_databases_handler(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<GetDatabasesQuery>,
+) -> impl IntoResponse {
+    let driver_str = params.driver.as_deref().unwrap_or(&state.config.default_driver);
+    let conn_str = params.connection_string.as_deref().unwrap_or(&state.config.default_connection_string);
+    let driver = DbDriver::from_str(driver_str);
+
+    match db::get_databases(&driver, conn_str).await {
+        Ok(dbs) => Json(json!({ "success": true, "databases": dbs })).into_response(),
+        Err(e) => Json(json!({ "success": false, "error": e.to_string() })).into_response(),
+    }
+}
+
 pub async fn schema_tree_handler(
     State(state): State<Arc<AppState>>,
     Query(params): Query<GetTreeQuery>,
@@ -59,8 +74,10 @@ pub async fn schema_tree_handler(
     let driver_str = params.driver.as_deref().unwrap_or(&state.config.default_driver);
     let conn_str = params.connection_string.as_deref().unwrap_or(&state.config.default_connection_string);
     let driver = DbDriver::from_str(driver_str);
+    let db_opt = params.database.as_deref();
+    let all_dbs = params.all_databases.unwrap_or(false);
 
-    match db::get_tree_root(&driver, conn_str).await {
+    match db::get_tree_root(&driver, conn_str, db_opt, all_dbs).await {
         Ok(nodes) => Json(json!({ "success": true, "nodes": nodes })).into_response(),
         Err(e) => Json(json!({ "success": false, "error": e.to_string() })).into_response(),
     }
@@ -101,6 +118,7 @@ pub async fn execute_query_handler(
     let driver_str = payload.driver.as_deref().unwrap_or(&state.config.default_driver);
     let conn_str = payload.connection_string.as_deref().unwrap_or(&state.config.default_connection_string);
     let driver = DbDriver::from_str(driver_str);
+    let db_opt = payload.database.as_deref();
 
     if payload.query.trim().is_empty() {
         return Json(json!({
@@ -113,7 +131,7 @@ pub async fn execute_query_handler(
         }));
     }
 
-    let response = db::execute_query(&driver, &conn_str, &payload.query).await;
+    let response = db::execute_query(&driver, &conn_str, db_opt, &payload.query).await;
     Json(json!(response))
 }
 
@@ -124,12 +142,13 @@ pub async fn export_query_handler(
     let driver_str = payload.driver.as_deref().unwrap_or(&state.config.default_driver);
     let conn_str = payload.connection_string.as_deref().unwrap_or(&state.config.default_connection_string);
     let driver = DbDriver::from_str(driver_str);
+    let db_opt = payload.database.as_deref();
 
     if payload.query.trim().is_empty() {
         return (StatusCode::BAD_REQUEST, "Query cannot be blank").into_response();
     }
 
-    let res = db::execute_query(&driver, &conn_str, &payload.query).await;
+    let res = db::execute_query(&driver, &conn_str, db_opt, &payload.query).await;
     if !res.success || res.tables.is_empty() {
         let err_msg = res.error.unwrap_or_else(|| "Query returned no result to export".to_string());
         return (StatusCode::BAD_REQUEST, err_msg).into_response();
@@ -138,12 +157,10 @@ pub async fn export_query_handler(
     let table = &res.tables[0];
     let mut wtr = Writer::from_writer(Vec::new());
 
-    // Write header
     if let Err(_) = wtr.write_record(&table.columns) {
         return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to write CSV header").into_response();
     }
 
-    // Write rows
     for row in &table.rows {
         let string_row: Vec<String> = row
             .iter()

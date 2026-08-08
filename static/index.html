@@ -46,6 +46,12 @@
                         <option value="sqlite">SQLite 3</option>
                     </select>
                 </div>
+                <div class="engine-selector" id="dbSelectBox">
+                    <span class="selector-label"><i class="fa-solid fa-database"></i> Database:</span>
+                    <select id="dbNameSelect" class="styled-select">
+                        <option value="master">master</option>
+                    </select>
+                </div>
             </div>
 
             <div class="header-right">
@@ -67,9 +73,14 @@
                     <div class="sidebar-title">
                         <i class="fa-solid fa-sitemap"></i> Schema Explorer
                     </div>
-                    <button id="refreshTreeBtn" class="btn-icon" title="Refresh Schema Tree">
-                        <i class="fa-solid fa-rotate-right"></i>
-                    </button>
+                    <div style="display:flex; gap:4px;">
+                        <button id="toggleAllDbsBtn" class="btn-icon" title="Toggle: Active DB Only vs All Databases">
+                            <i class="fa-solid fa-layer-group"></i>
+                        </button>
+                        <button id="refreshTreeBtn" class="btn-icon" title="Refresh Schema Tree">
+                            <i class="fa-solid fa-rotate-right"></i>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="sidebar-search">

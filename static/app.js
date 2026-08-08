@@ -4,6 +4,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // --- Application State ---
     let appState = {
         driver: 'mssql',
+        database: 'master',
+        allDatabases: false,
         connectionString: '',
         editor: null,
         history: JSON.parse(localStorage.getItem('sqlwebadmin_history') || '[]'),
@@ -12,6 +14,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // --- DOM Elements ---
     const dbDriverSelect = document.getElementById('dbDriverSelect');
+    const dbNameSelect = document.getElementById('dbNameSelect');
+    const toggleAllDbsBtn = document.getElementById('toggleAllDbsBtn');
     const connectionBtn = document.getElementById('connectionBtn');
     const connStatus = document.getElementById('connStatus');
     const treeView = document.getElementById('treeView');
@@ -87,6 +91,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             connectionStringInput.value = appState.connectionString;
 
             updateConnectionBadge(true, "Connected");
+            await loadDatabasesList();
             loadSchemaTree();
         } else {
             updateConnectionBadge(false, "Config Error");
@@ -97,16 +102,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // --- Event Listeners ---
-    dbDriverSelect.addEventListener('change', (e) => {
+    dbDriverSelect.addEventListener('change', async (e) => {
         appState.driver = e.target.value;
         const saved = localStorage.getItem('sqlwebadmin_conn_' + appState.driver);
         if (saved) appState.connectionString = saved;
         modalDriverSelect.value = appState.driver;
         connectionStringInput.value = appState.connectionString;
+        await loadDatabasesList();
         loadSchemaTree();
     });
 
-    refreshTreeBtn.addEventListener('click', () => loadSchemaTree());
+    dbNameSelect.addEventListener('change', (e) => {
+        appState.database = e.target.value;
+        loadSchemaTree();
+    });
+
+    toggleAllDbsBtn.addEventListener('click', () => {
+        appState.allDatabases = !appState.allDatabases;
+        toggleAllDbsBtn.style.color = appState.allDatabases ? 'var(--primary)' : 'var(--text-muted)';
+        loadSchemaTree();
+    });
+
+    refreshTreeBtn.addEventListener('click', async () => {
+        await loadDatabasesList();
+        loadSchemaTree();
+    });
+
     executeBtn.addEventListener('click', () => executeQuery());
     exportCsvBtn.addEventListener('click', () => exportQuery('csv'));
     resetBtn.addEventListener('click', () => resetWorkspace());
@@ -194,13 +215,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    saveConnectionBtn.addEventListener('click', () => {
+    saveConnectionBtn.addEventListener('click', async () => {
         appState.driver = modalDriverSelect.value;
         appState.connectionString = connectionStringInput.value;
         dbDriverSelect.value = appState.driver;
         localStorage.setItem('sqlwebadmin_conn_' + appState.driver, appState.connectionString);
         connectionModal.classList.remove('active');
         updateConnectionBadge(true, "Connected");
+        await loadDatabasesList();
         loadSchemaTree();
     });
 
@@ -218,11 +240,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    // Load Available Databases List for Header Dropdown
+    async function loadDatabasesList() {
+        try {
+            const data = await safeFetchJson(`/api/schema/databases?driver=${encodeURIComponent(appState.driver)}&connection_string=${encodeURIComponent(appState.connectionString)}`);
+            if (data.success && data.databases && data.databases.length > 0) {
+                dbNameSelect.innerHTML = data.databases.map(db => `<option value="${escapeHtml(db)}" ${db === appState.database ? 'selected' : ''}>${escapeHtml(db)}</option>`).join('');
+                if (!data.databases.includes(appState.database)) {
+                    appState.database = data.databases[0];
+                    dbNameSelect.value = appState.database;
+                }
+            }
+        } catch (err) {
+            console.error("Failed to load databases list", err);
+        }
+    }
+
     // Load Schema Tree
     async function loadSchemaTree() {
         treeView.innerHTML = '<div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading schema...</div>';
         try {
-            const data = await safeFetchJson(`/api/schema/tree?driver=${encodeURIComponent(appState.driver)}&connection_string=${encodeURIComponent(appState.connectionString)}`);
+            const data = await safeFetchJson(`/api/schema/tree?driver=${encodeURIComponent(appState.driver)}&connection_string=${encodeURIComponent(appState.connectionString)}&database=${encodeURIComponent(appState.database)}&all_databases=${appState.allDatabases}`);
             if (data.success && data.nodes) {
                 treeView.innerHTML = '';
                 data.nodes.forEach(node => {
@@ -293,7 +331,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (childrenContainer.children.length === 0) {
                         childrenContainer.innerHTML = '<div style="padding:4px 8px; color:var(--text-dim);"><i class="fa-solid fa-spinner fa-spin"></i> Loading...</div>';
                         try {
-                            const data = await safeFetchJson(`/api/schema/children?node_type=${encodeURIComponent(nodeData.node_type)}&parent_id=${encodeURIComponent(nodeData.id)}&driver=${encodeURIComponent(appState.driver)}&connection_string=${encodeURIComponent(appState.connectionString)}`);
+                            const data = await safeFetchJson(`/api/schema/children?node_type=${encodeURIComponent(nodeData.node_type)}&parent_id=${encodeURIComponent(nodeData.id)}&driver=${encodeURIComponent(appState.driver)}&connection_string=${encodeURIComponent(appState.connectionString)}&database=${encodeURIComponent(appState.database)}`);
                             childrenContainer.innerHTML = '';
                             if (data.success && data.nodes && data.nodes.length > 0) {
                                 data.nodes.forEach(child => {
@@ -316,7 +354,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Load Definition or SELECT query for clicked node
     async function loadObjectDefinition(nodeType, objectId) {
         try {
-            const data = await safeFetchJson(`/api/schema/definition?node_type=${encodeURIComponent(nodeType)}&object_id=${encodeURIComponent(objectId)}&driver=${encodeURIComponent(appState.driver)}&connection_string=${encodeURIComponent(appState.connectionString)}`);
+            const data = await safeFetchJson(`/api/schema/definition?node_type=${encodeURIComponent(nodeType)}&object_id=${encodeURIComponent(objectId)}&driver=${encodeURIComponent(appState.driver)}&connection_string=${encodeURIComponent(appState.connectionString)}&database=${encodeURIComponent(appState.database)}`);
             if (data.success) {
                 appState.editor.setValue(data.definition);
             }
@@ -346,7 +384,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 body: JSON.stringify({
                     query: queryText,
                     driver: appState.driver,
-                    connection_string: appState.connectionString
+                    connection_string: appState.connectionString,
+                    database: appState.database
                 })
             });
             const elapsed = Date.now() - startTime;
@@ -445,7 +484,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 body: JSON.stringify({
                     query: queryText,
                     driver: appState.driver,
-                    connection_string: appState.connectionString
+                    connection_string: appState.connectionString,
+                    database: appState.database
                 })
             });
 

@@ -43,6 +43,7 @@ async fn main() {
     let api_routes = Router::new()
         .route("/config", get(handlers::get_config_handler))
         .route("/connect/test", post(handlers::test_connection_handler))
+        .route("/schema/databases", get(handlers::get_databases_handler))
         .route("/schema/tree", get(handlers::schema_tree_handler))
         .route("/schema/children", get(handlers::schema_children_handler))
         .route("/schema/definition", get(handlers::schema_definition_handler))
