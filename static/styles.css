@@ -796,3 +796,31 @@ body {
     font-size: 11px;
     color: var(--text-dim);
 }
+
+/* App Footer */
+.app-footer {
+    height: 32px;
+    background: var(--bg-header);
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    font-size: 11px;
+    color: var(--text-dim);
+    z-index: 10;
+}
+
+.footer-right .github-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+    transition: color 0.15s ease;
+}
+
+.footer-right .github-link:hover {
+    color: var(--primary);
+}
