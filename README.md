@@ -54,10 +54,19 @@ cargo build --release
 
 # Run the server
 cargo run --release
+
+# Run on different port
+PORT=8081 cargo run --release
 ```
 
 Open your browser at:
 `http://localhost:8080`
+
+### Kill current process
+
+```bash
+pkill sqlwebadmin
+```
 
 ---
 
